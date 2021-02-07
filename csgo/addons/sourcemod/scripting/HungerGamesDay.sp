@@ -3,7 +3,7 @@
 #define DEBUG
 
 #define PLUGIN_AUTHOR "Salty"
-#define PLUGIN_VERSION "0.00"
+#define PLUGIN_VERSION "69.00"
 
 #include <sourcemod>
 #include <sdktools>
@@ -11,21 +11,26 @@
 #include <cstrike>
 
 
+int dayCount = 0;
+
 #pragma newdecls required
 
 //ConVars
 ConVar g_cvFriendlyFire;
 float g_fctSpawnLocation[3];
-bool CanPluginRun;
 bool g_bHungerGamesDay;
-
+ 
+Handle g_hSetFreeze;
+Handle g_hStartSound;
+Handle g_hSetFf;
+Handle g_hunFreeze;
 
 
 public Plugin myinfo = 
 {
 	name = "HungerGamesDay",
 	author = PLUGIN_AUTHOR,
-	description = "HungerGamesDay",
+	description = "Hunger Games day for Jailbreak servers.",
 	version = PLUGIN_VERSION,
 	url = ""
 };
@@ -40,24 +45,15 @@ public void OnPluginStart()
 
 void InitPrecache()
 {
-    AddFileToDownloadsTable("sound/hungergames/cannon.mp3");
-    PrecacheSound("hungergames/cannon.mp3");
+    AddFileToDownloadsTable("sound/hungergames/cannon1.mp3");
+    AddFileToDownloadsTable("sound/hungergames/countdown.mp3");
+    PrecacheSound("hungergames/countdown.mp3");
+    PrecacheSound("hungergames/cannon1.mp3");
 }
 
 public void OnMapStart()
 {
-    CanPluginRun = true;
     InitPrecache();
-}
-
-void ChangePluginRun()
-{
-    CanPluginRun = false;
-}
-
-void setFreezeTimer()
-{
-    CreateTimer(1.0, setFreeze);
 }
 
 void FindCTSpawn()
@@ -71,8 +67,6 @@ void FindCTSpawn()
     GetEntPropVector(iCTSpawn, Prop_Send, "m_vecOrigin", g_fctSpawnLocation);
 }
 
-
-
 void teleport()
 {
     for(int i = 1; i <= MaxClients; i++)
@@ -84,10 +78,15 @@ void teleport()
     }
 }
 
-
+public Action StartSound(Handle timer)
+{
+    g_hStartSound = null;
+    EmitSoundToAll("hungergames/countdown.mp3");
+}
 
 public Action setFreeze(Handle timer)
 {
+    g_hSetFreeze = null;
     SetHudTextParams(-1.0, 0.1, 5.0, 255, 0, 0, 255, 0, 5.0, 0.25, 0.25);
     for(int i = 1; i <= MaxClients; i++)
     {
@@ -106,13 +105,9 @@ public Action setFreeze(Handle timer)
     teleport();
 }
 
-void setffTimer()
-{
-    CreateTimer(45.0, setFF);
-}
-
 public Action setFF(Handle timer)
 {
+    g_hSetFf = null;
     g_cvFriendlyFire.SetBool(true);
 
     SetHudTextParams(-1.0, 0.1, 5.0, 255, 0, 0, 255, 0, 5.0, 0.25, 0.25);
@@ -125,13 +120,9 @@ public Action setFF(Handle timer)
     }
 }
 
-void setUnFreezeTimer()
-{
-    CreateTimer(5.0, unFreeze);
-}
-
 public Action unFreeze(Handle timer)
 {
+    g_hunFreeze = null;
     SetHudTextParams(-1.0, 0.1, 5.0, 255, 0, 0, 255, 0, 5.0, 0.25, 0.25);
     for (int i = 1; i <= MaxClients; i++)
     {
@@ -145,13 +136,11 @@ public Action unFreeze(Handle timer)
 
 public Action Command_HungerGames(int client, int args)
 {
-
-    if(CanPluginRun == false)
-    {   
-        ReplyToCommand(client, "This day can only be used once per map.");
+    if(dayCount >= 3)
+    {
+        ReplyToCommand(client, "This day has been used 3 times already for this map.");
         return Plugin_Handled;
     }
-
 
     SetHudTextParams(-1.0, 0.1, 5.0, 255, 0, 0, 255, 0, 2.0, 0.25, 0.25);
 
@@ -172,15 +161,18 @@ public Action Command_HungerGames(int client, int args)
         }
     }
 
-    setFreezeTimer();
-    setUnFreezeTimer();
-    setffTimer();
+    g_hSetFreeze = CreateTimer(1.0, setFreeze);
+    g_hunFreeze = CreateTimer(5.0, unFreeze);
+    
+    //countdown timer
+    g_hStartSound = CreateTimer(24.0, StartSound);
+    dayCount++;
+    PrintToConsoleAll("%i",dayCount);
+    g_hSetFf = CreateTimer(45.0, setFF);
     g_bHungerGamesDay = true;
-    ChangePluginRun();
     return Plugin_Handled;
     
 }
-
 
 public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast)
 {
@@ -193,7 +185,7 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
     int client = GetClientOfUserId(event.GetInt("userid"));
     if (client && IsClientInGame(client) && GetClientTeam(client) == CS_TEAM_T)
     {
-        EmitSoundToAll("hungergames/cannon.mp3");
+        EmitSoundToAll("hungergames/cannon1.mp3");
     }
 
     int count = 0;
@@ -205,8 +197,6 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
             count++;
         }
     }
-
-
 
     if(count <= 1)
     {
@@ -225,6 +215,11 @@ public void Event_OnRoundEnd(Event event, const char[] name, bool dontBroadcast)
 {
     if(g_bHungerGamesDay)
     {
+        delete g_hSetFf;
+        delete g_hSetFreeze;
+        delete g_hunFreeze;
+        delete g_hStartSound;
+
         g_cvFriendlyFire.SetBool(false);
         g_bHungerGamesDay = false;
     }
