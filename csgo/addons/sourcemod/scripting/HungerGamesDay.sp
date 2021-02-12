@@ -11,7 +11,14 @@
 #include <cstrike>
 
 
+
+//Globals
+int Tcolors[MAXPLAYERS + 1][4];
 int dayCount = 0;
+//beacon shit
+bool g_bBeacon[MAXPLAYERS + 1];
+int g_iModelSprite;
+int g_iHaloSprite;
 
 #pragma newdecls required
 
@@ -19,12 +26,11 @@ int dayCount = 0;
 ConVar g_cvFriendlyFire;
 float g_fctSpawnLocation[3];
 bool g_bHungerGamesDay;
- 
+
 Handle g_hSetFreeze;
 Handle g_hStartSound;
 Handle g_hSetFf;
 Handle g_hunFreeze;
-
 
 public Plugin myinfo = 
 {
@@ -49,13 +55,69 @@ void InitPrecache()
     AddFileToDownloadsTable("sound/hungergames/countdown.mp3");
     PrecacheSound("hungergames/countdown.mp3");
     PrecacheSound("hungergames/cannon1.mp3");
+
+    //BeaconShit
+    AddFileToDownloadsTable("materials/warden/physbeam.vmt");
+    AddFileToDownloadsTable("materials/warden/physbeam.vtf");
+    AddFileToDownloadsTable("materials/warden/energysplash.vmt");
+    AddFileToDownloadsTable("materials/warden/energysplash.vmt");
+    g_iModelSprite = PrecacheModel("materials/warden/physbeam.vmt", false);
+    g_iHaloSprite = PrecacheModel("materials/sprites/halo01.vmt", false);
 }
+
 
 public void OnMapStart()
 {
     InitPrecache();
+    dayCount = 0;
 }
 
+
+//BeaconShit
+/////////////////////////////////////////////////////////////////
+void ToggleBeacon(int iTarget)
+{
+    g_bBeacon[iTarget] = !g_bBeacon[iTarget];
+    if (g_bBeacon[iTarget])
+    {
+        CreateTimer(5.0, Timer_Beacon, GetClientSerial(iTarget), TIMER_REPEAT);
+    }
+}
+
+public Action Timer_Beacon(Handle timer, any serial)
+{
+    int iTarget = GetClientFromSerial(serial);
+    if (!iTarget || !g_bBeacon[iTarget])
+        return Plugin_Stop;
+
+    float fTargetPos[3];
+    GetClientAbsOrigin(iTarget, fTargetPos);
+
+    TE_SetupBeamRingPoint(fTargetPos, 20.0, 200.0, g_iModelSprite,
+                          g_iHaloSprite, 0, 60, 1.0, 7.0, 0.5,
+                          view_as<int>({255, 0, 0, 255}), 3, 0);
+    TE_SendToAll();
+    
+    return Plugin_Continue;
+}
+
+    
+
+
+
+
+
+/////////////////////////////////////////////////////////////////
+
+public void OnClientDisconnect(int client)
+{
+    g_bBeacon[client] = false;
+}
+
+
+
+
+//Finds the ct spawn
 void FindCTSpawn()
 {
     int iCTSpawn = FindEntityByClassname(-1, "info_player_counterterrorist");
@@ -67,6 +129,7 @@ void FindCTSpawn()
     GetEntPropVector(iCTSpawn, Prop_Send, "m_vecOrigin", g_fctSpawnLocation);
 }
 
+//Teleports players to ct spawn
 void teleport()
 {
     for(int i = 1; i <= MaxClients; i++)
@@ -77,6 +140,7 @@ void teleport()
         }
     }
 }
+
 
 public Action StartSound(Handle timer)
 {
@@ -160,6 +224,17 @@ public Action Command_HungerGames(int client, int args)
             SetEntityHealth(i, 32000);
         }
     }
+    
+    //gets T's Colors and stores them in Tcolors
+    for(int i = 1;i <= MaxClients; i++)
+    {
+        if(IsClientInGame(i) && IsPlayerAlive(i) && GetClientTeam(i) == CS_TEAM_T)
+        {
+            GetEntityRenderColor(i, Tcolors[i][0], Tcolors[i][1], Tcolors[i][2], Tcolors[i][3]);
+            SetEntityRenderColor(i, 252, 0, 0, 255);
+        }
+    }
+
 
     g_hSetFreeze = CreateTimer(1.0, setFreeze);
     g_hunFreeze = CreateTimer(5.0, unFreeze);
@@ -172,6 +247,21 @@ public Action Command_HungerGames(int client, int args)
     g_bHungerGamesDay = true;
     return Plugin_Handled;
     
+}
+
+void removeWeapon(int target)
+{
+    for(int i = 0; i < 5; i++)
+    {
+        int weapon = GetPlayerWeaponSlot(target, i);
+
+        while(weapon > 0)
+        {
+            RemovePlayerItem(target, weapon);
+            AcceptEntityInput(weapon, "Kill");
+            weapon = GetPlayerWeaponSlot(target, i);
+        }
+    }
 }
 
 public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast)
@@ -197,6 +287,29 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
             count++;
         }
     }
+    if(count <= 5)
+    {
+        for(int i = 1; i <= MaxClients; i++)
+        {
+            if(IsClientInGame(i) && IsPlayerAlive(i) && GetClientTeam(i) == CS_TEAM_T)
+            {
+                ToggleBeacon(i);
+            }
+        }
+
+    }
+
+    if(count <= 1)
+    {
+        for(int i = 1; i <= MaxClients; i++)
+        {
+            if(IsClientInGame(i) && IsPlayerAlive(i) && GetClientTeam(i) == CS_TEAM_T)
+            {
+                removeWeapon(i);
+            }
+        } 
+    }
+
 
     if(count <= 1)
     {
